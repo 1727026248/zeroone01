@@ -82,8 +82,8 @@ const UA = $.isNode() ? (process.env.JD_USER_AGENT ? process.env.JD_USER_AGENT :
   }
   // 助力
   let res = [], res2 = [];
-  $.innerShInviteList = await getAuthorShareCode('https://ghproxy.com/https://raw.githubusercontent.com/smiek2221/scripts/master/summer_movement_one.json');
-  res2 = await getAuthorShareCode('https://ghproxy.com/https://raw.githubusercontent.com/smiek2221/scripts/master/summer_movement.json');
+  $.innerShInviteList = await getAuthorShareCode('https://www.fastmock.site/mock/6d20a923d74f79b1754f74228c3eec92/54/22');
+  res2 = await getAuthorShareCode('https://www.fastmock.site/mock/6d20a923d74f79b1754f74228c3eec92/54/22');
   $.ShInviteLists = []
   if (ShHelpAuthorFlag) {
     $.innerShInviteLists = getRandomArrayElements([...res, ...res2], [...res, ...res2].length);
