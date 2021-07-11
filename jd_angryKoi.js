@@ -32,6 +32,7 @@ var packets = [];
                 if(data?.data?.result?.redPacketId){
                     packets.push(data.data.result.redPacketId)
                 }
+                
                 continue;
         }   
         data = await requestApi('h5activityIndex',cookie);
