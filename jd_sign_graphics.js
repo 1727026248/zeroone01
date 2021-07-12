@@ -1,241 +1,260 @@
-/*
-京东多合一签到,自用,可N个京东账号
-活动入口：各处的签到汇总
-Node.JS专用
-IOS软件用户请使用 https://raw.githubusercontent.com/NobyDa/Script/master/JD-DailyBonus/jd_fakersign.js
-更新时间：2021-5-6
-推送通知默认简洁模式(多账号只发送一次)。如需详细通知，设置环境变量 JD_BEAN_SIGN_NOTIFY_SIMPLE 为false即可(N账号推送N次通知)。
-Modified From github https://github.com/ruicky/jd_sign_bot
- */
-const $ = new Env('京东多合一签到');
+/* 
+14 10 * * * https://raw.githubusercontent.com/smiek2221/scripts/master/jd_sign_graphics.js
+只支持nodejs环境
+需要安装依赖 
+npm i png-js 或者 npm i png-js -S
+
+*/
+
+const validator = require('./shufflewzc_faker2_jd_JDJRValidator_Pure.js');
+const Faker=require('./shufflewzc_faker2_jd_sign_graphics_validate.js') 
+
+const $ = new Env('京东签到图形验证');
 const notify = $.isNode() ? require('./sendNotify') : '';
 //Node.js用户请在jdCookie.js处填写京东ck;
 const jdCookieNode = $.isNode() ? require('./jdCookie.js') : '';
-const exec = require('child_process').execSync
-const fs = require('fs')
-const download = require('download');
-let resultPath = "./result.txt";
-let JD_DailyBonusPath = "./shufflewzc_faker2_jd_fakersign.js";
-let outPutUrl = './';
-let NodeSet = 'CookieSet.json';
-let cookiesArr = [], cookie = '', allMessage = '';
-
+let cookiesArr = [], cookie = '';
 if ($.isNode()) {
   Object.keys(jdCookieNode).forEach((item) => {
     cookiesArr.push(jdCookieNode[item])
   })
-  if (process.env.JD_DEBUG && process.env.JD_DEBUG === 'false') console.log = () => {};
+  if (process.env.JD_DEBUG && process.env.JD_DEBUG === 'false') console.log = () => { };
+} else {
+  cookiesArr = [$.getdata('CookieJD'), $.getdata('CookieJD2'), ...jsonParse($.getdata('CookiesJD') || "[]").map(item => item.cookie)].filter(item => !!item);
 }
-!(async() => {
+let message = '', subTitle = '', beanNum = 0;
+let fp = ''
+let eid = ''
+let UA = ""
+let signFlag = false
+let successNum = 0
+let errorNum = 0
+
+const turnTableId = [
+  { "name": "京东商城-内衣", "id": 1071, "url": "https://prodev.m.jd.com/mall/active/4PgpL1xqPSW1sVXCJ3xopDbB1f69/index.html" },
+  { "name": "京东商城-健康", "id": 527, "url": "https://prodev.m.jd.com/mall/active/w2oeK5yLdHqHvwef7SMMy4PL8LF/index.html" },
+  { "name": "京东商城-清洁", "id": 446, "url": "https://prodev.m.jd.com/mall/active/2Tjm6ay1ZbZ3v7UbriTj6kHy9dn6/index.html" },
+  { "name": "京东商城-个护", "id": 336, "url": "https://prodev.m.jd.com/mall/active/2tZssTgnQsiUqhmg5ooLSHY9XSeN/index.html" },
+  { "name": "京东商城-童装", "id": 511, "url": "https://prodev.m.jd.com/mall/active/3Af6mZNcf5m795T8dtDVfDwWVNhJ/index.html" },
+  { "name": "京东商城-母婴", "id": 458, "url": "https://prodev.m.jd.com/mall/active/3BbAVGQPDd6vTyHYjmAutXrKAos6/index.html" },
+  { "name": "京东商城-数码", "id": 347, "url": "https://prodev.m.jd.com/mall/active/4SWjnZSCTHPYjE5T7j35rxxuMTb6/index.html" },
+  { "name": "京东超市", "id": 1204, "url": "https://pro.m.jd.com/mall/active/QPwDgLSops2bcsYqQ57hENGrjgj/index.html" },
+]
+$.get = validator.injectToRequest($.get.bind($), 'channelSign')
+$.post = validator.injectToRequest($.post.bind($), 'channelSign')
+
+!(async () => {
   if (!cookiesArr[0]) {
-    $.msg($.name, '【提示】请先获取cookie\n直接使用NobyDa的京东签到获取', 'https://bean.m.jd.com/bean/signIndex.action', {"open-url": "https://bean.m.jd.com/bean/signIndex.action"});
+    $.msg($.name, '【提示】请先获取京东账号一cookie\n直接使用NobyDa的京东签到获取', 'https://bean.m.jd.com/bean/signIndex.action', { "open-url": "https://bean.m.jd.com/bean/signIndex.action" });
     return;
   }
-  process.env.JD_BEAN_SIGN_NOTIFY_SIMPLE = process.env.JD_BEAN_SIGN_NOTIFY_SIMPLE ? process.env.JD_BEAN_SIGN_NOTIFY_SIMPLE : 'true';
-  await requireConfig();
-  // 下载最新代码
-  await downFile();
-  if (!await fs.existsSync(JD_DailyBonusPath)) {
-    console.log(`\njd_fakersign.js 文件不存在，停止执行${$.name}\n`);
-    await notify.sendNotify($.name, `本次执行${$.name}失败，jd_fakersign.js 文件下载异常，详情请查看日志`)
-    return
-  }
-  const content = await fs.readFileSync(JD_DailyBonusPath, 'utf8')
-  for (let i =0; i < cookiesArr.length; i++) {
-    cookie = cookiesArr[i];
-    if (cookie) {
-      $.UserName = decodeURIComponent(cookie.match(/pt_pin=([^; ]+)(?=;?)/) && cookie.match(/pt_pin=([^; ]+)(?=;?)/)[1])
+  for (let i = 0; i < cookiesArr.length; i++) {
+    if (cookiesArr[i]) {
+      cookie = cookiesArr[i];
+      $.UserName = decodeURIComponent(cookie.match(/pt_pin=(.+?);/) && cookie.match(/pt_pin=(.+?);/)[1])
       $.index = i + 1;
       $.nickName = '';
-      await TotalBean();
-      console.log(`*****************开始京东账号${$.index} ${$.nickName || $.UserName}京豆签到*******************\n`);
-      await changeFile(content);
-      await execSign();
+      console.log(`\n开始【京东账号${$.index}】${$.nickName || $.UserName}\n`);
+      beanNum = 0
+      successNum = 0
+      errorNum = 0
+      subTitle = '';
+      await signRun()
+      const UTC8 = new Date().getTime() + new Date().getTimezoneOffset()*60000 + 28800000;
+      $.beanSignTime = new Date(UTC8).toLocaleString('zh', {hour12: false});
+      let msg = `【京东账号${$.index}】${$.nickName || $.UserName}\n【签到时间】:  ${$.beanSignTime}\n【签到概览】:  成功${successNum}个, 失败${errorNum}个\n【签到奖励】:  ${beanNum}京豆\n`
+      message += msg + '\n'
+      $.msg($.name, msg);
+      // break
     }
   }
-  //await deleteFile(JD_DailyBonusPath);//删除下载的jd_fakersign.js文件
-  if ($.isNode() && allMessage && process.env.JD_BEAN_SIGN_NOTIFY_SIMPLE === 'true') {
-    $.msg($.name, '', allMessage);
-    await notify.sendNotify($.name, allMessage)
-  }
+  await showMsg();
 })()
-    .catch((e) => $.logErr(e))
-    .finally(() => $.done())
-async function execSign() {
-  console.log(`\n开始执行 ${$.name} 签到，请稍等...\n`);
-  try {
-    // if (notify.SCKEY || notify.BARK_PUSH || notify.DD_BOT_TOKEN || (notify.TG_BOT_TOKEN && notify.TG_USER_ID) || notify.IGOT_PUSH_KEY || notify.QQ_SKEY) {
-    //   await exec(`${process.execPath} ${JD_DailyBonusPath} >> ${resultPath}`);
-    //   const notifyContent = await fs.readFileSync(resultPath, "utf8");
-    //   console.log(`👇👇👇👇👇👇👇👇👇👇👇LOG记录👇👇👇👇👇👇👇👇👇👇👇\n${notifyContent}\n👆👆👆👆👆👆👆👆👆LOG记录👆👆👆👆👆👆👆👆👆👆👆`);
-    // } else {
-    //   console.log('没有提供通知推送，则打印脚本执行日志')
-    //   await exec(`${process.execPath} ${JD_DailyBonusPath}`, { stdio: "inherit" });
-    // }
-    await exec(`${process.execPath} ${JD_DailyBonusPath} >> ${resultPath}`);
-    const notifyContent = await fs.readFileSync(resultPath, "utf8");
-    console.error(`👇👇👇👇👇👇👇👇👇👇👇签到详情👇👇👇👇👇👇👇👇👇👇👇\n${notifyContent}\n👆👆👆👆👆👆👆👆👆签到详情👆👆👆👆👆👆👆👆👆👆👆`);
-    // await exec("node jd_fakersign.js", { stdio: "inherit" });
-    // console.log('执行完毕', new Date(new Date().getTime() + 8 * 3600000).toLocaleDateString())
-    //发送通知
-    let BarkContent = '';
-    if (fs.existsSync(resultPath)) {
-      const barkContentStart = notifyContent.indexOf('【签到概览】')
-      const barkContentEnd = notifyContent.length;
-      if (process.env.JD_BEAN_SIGN_STOP_NOTIFY !== 'true') {
-        if (process.env.JD_BEAN_SIGN_NOTIFY_SIMPLE === 'true') {
-          if (barkContentStart > -1 && barkContentEnd > -1) {
-            BarkContent = notifyContent.substring(barkContentStart, barkContentEnd);
-          }
-          BarkContent = BarkContent.split('\n\n')[0];
-        } else {
-          if (barkContentStart > -1 && barkContentEnd > -1) {
-            BarkContent = notifyContent.substring(barkContentStart, barkContentEnd);
-          }
-        }
-      }
-    }
-    //不管哪个时区,这里得到的都是北京时间的时间戳;
-    const UTC8 = new Date().getTime() + new Date().getTimezoneOffset()*60000 + 28800000;
-    $.beanSignTime = new Date(UTC8).toLocaleString('zh', {hour12: false});
-    //console.log(`脚本执行完毕时间：${$.beanSignTime}`)
-    if (BarkContent) {
-      allMessage += `【京东号 ${$.index}】: ${$.nickName || $.UserName}\n【签到时间】:  ${$.beanSignTime}\n${BarkContent}${$.index !== cookiesArr.length ? '\n\n' : ''}`;
-      if (!process.env.JD_BEAN_SIGN_NOTIFY_SIMPLE || (process.env.JD_BEAN_SIGN_NOTIFY_SIMPLE && process.env.JD_BEAN_SIGN_NOTIFY_SIMPLE !== 'true')) {
-        await notify.sendNotify(`${$.name} - 账号${$.index} - ${$.nickName || $.UserName}`, `【签到号 ${$.index}】: ${$.nickName || $.UserName}\n【签到时间】:  ${$.beanSignTime}\n${BarkContent}`);
-      }
-    }
-    //运行完成后，删除下载的文件
-    await deleteFile(resultPath);//删除result.txt
-    console.log(`\n\n*****************${new Date(new Date().getTime()).toLocaleString('zh', {hour12: false})} 京东账号${$.index} ${$.nickName || $.UserName} ${$.name}完成*******************\n\n`);
-  } catch (e) {
-    console.log("京东签到脚本执行异常:" + e);
-  }
+  .catch((e) => {
+    $.log('', `❌ ${$.name}, 失败! 原因: ${e}!`, '')
+  })
+  .finally(() => {
+    $.done();
+  })
+
+async function showMsg() {
+  $.msg($.name, `【签到数量】:  ${turnTableId.length}个\n` + subTitle + message);
+  if ($.isNode() && message) await notify.sendNotify(`${$.name}`, `【签到数量】:  ${turnTableId.length}个\n` + subTitle + message);
 }
-async function downFile () {
-  let url = '';
-  await downloadUrl();
-  if ($.body) {
-    url = 'https://ghproxy.com/https://raw.githubusercontent.com/shufflewzc/faker2/main/jd_fakersign.js';
-  } else {
-    url = 'https://cdn.jsdelivr.net/gh/NobyDa/Script@master/JD-DailyBonus/jd_fakersign.js';
-  }
-  try {
-    const options = { }
-    if (process.env.TG_PROXY_HOST && process.env.TG_PROXY_PORT) {
-      const tunnel = require("tunnel");
-      const agent = {
-        https: tunnel.httpsOverHttp({
-          proxy: {
-            host: process.env.TG_PROXY_HOST,
-            port: process.env.TG_PROXY_PORT * 1
-          }
-        })
-      }
-      Object.assign(options, { agent })
+async function signRun() {
+  UA = $.isNode() ? (process.env.JD_USER_AGENT ? process.env.JD_USER_AGENT : (require('./USER_AGENTS').USER_AGENT)) : ($.getdata('JDUA') ? $.getdata('JDUA') : "Mozilla/5.0 (iPhone; CPU iPhone OS 13_2_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.0.3 Mobile/15E148 Safari/604.1")
+  for (let i in turnTableId) {
+    signFlag = false
+    await Login(i)
+    if(signFlag){
+      successNum++;
+    }else{
+      errorNum++;
     }
-    await download(url, outPutUrl, options);
-    console.log(`jd_fakersign.js文件下载完毕\n\n`);
-  } catch (e) {
-    console.log("jd_fakersign.js 文件下载异常:" + e);
   }
 }
 
-async function changeFile (content) {
-  console.log(`开始替换变量`)
-  let newContent = content.replace(/var Key = '.*'/, `var Key = '${cookie}'`);
-  newContent = newContent.replace(/const NodeSet = 'CookieSet.json'/, `const NodeSet = '${NodeSet}'`)
-  if (process.env.JD_BEAN_STOP && process.env.JD_BEAN_STOP !== '0') {
-    newContent = newContent.replace(/var stop = '0'/, `var stop = '${process.env.JD_BEAN_STOP}'`);
-  }
-  const zone = new Date().getTimezoneOffset();
-  if (zone === 0) {
-    //此处针对UTC-0时区用户做的
-    newContent = newContent.replace(/tm\s=.*/, `tm = new Date(new Date().toLocaleDateString()).getTime() - 28800000;`);
-  }
-  try {
-    await fs.writeFileSync(JD_DailyBonusPath, newContent, 'utf8');
-    console.log('替换变量完毕');
-  } catch (e) {
-    console.log("京东签到写入文件异常:" + e);
-  }
-}
-async function deleteFile(path) {
-  // 查看文件result.txt是否存在,如果存在,先删除
-  const fileExists = await fs.existsSync(path);
-  // console.log('fileExists', fileExists);
-  if (fileExists) {
-    const unlinkRes = await fs.unlinkSync(path);
-    // console.log('unlinkRes', unlinkRes)
-  }
-}
-function TotalBean() {
-  return new Promise(async resolve => {
-    const options = {
-      "url": `https://wq.jd.com/user/info/QueryJDUserInfo?sceneval=2`,
-      "headers": {
-        "Accept": "application/json,text/plain, */*",
-        "Content-Type": "application/x-www-form-urlencoded",
-        "Accept-Encoding": "gzip, deflate, br",
-        "Accept-Language": "zh-cn",
-        "Connection": "keep-alive",
-        "Cookie": cookie,
-        "Referer": "https://wqs.jd.com/my/jingdou/my.shtml?sceneval=2",
-        "User-Agent": $.isNode() ? (process.env.JD_USER_AGENT ? process.env.JD_USER_AGENT : (require('./USER_AGENTS').USER_AGENT)) : ($.getdata('JDUA') ? $.getdata('JDUA') : "jdapp;iPhone;9.4.4;14.3;network/4g;Mozilla/5.0 (iPhone; CPU iPhone OS 14_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148;supportJDSHWK/1")
-      },
-      "timeout": 10000
-    }
-    $.post(options, (err, resp, data) => {
+function Sign(i) {
+  return new Promise(resolve => {
+    $.post(tasPostkUrl(turnTableId[i].id), (err, resp, data) => {
       try {
         if (err) {
-          console.log(`${JSON.stringify(err)}`)
-          console.log(`${$.name} API请求失败，请检查网路重试`)
+          console.log(`\n${turnTableId[i].name} 签到: API查询请求失败 ‼️‼️`)
+          throw new Error(err);
         } else {
           if (data) {
+            // console.log(data)
             data = JSON.parse(data);
-            if (data['retcode'] === 13) {
-              $.isLogin = false; //cookie过期
-              return
-            }
-            if (data['retcode'] === 0) {
-              $.nickName = (data['base'] && data['base'].nickname) || $.UserName;
+            if (data.success && data.data) {
+              data = data.data
+              if (Number(data.jdBeanQuantity) > 0) beanNum += Number(data.jdBeanQuantity)
+              signFlag = true;
+              console.log(`${turnTableId[i].name} 签到成功:获得 ${Number(data.jdBeanQuantity)}京豆`)
             } else {
-              $.nickName = $.UserName
+              if (data.errorMessage) {
+                if(data.errorMessage.indexOf('已签到') > -1 || data.errorMessage.indexOf('今天已经签到') > -1){
+                  signFlag = true;
+                }
+                console.log(`${turnTableId[i].name} ${data.errorMessage}`)
+              } else {
+                console.log(`${turnTableId[i].name} ${JSON.stringify(data)}`)
+              }
             }
           } else {
-            console.log(`京东服务器返回空数据`)
+            console.log(`京豆api返回数据为空，请检查自身原因`)
           }
         }
       } catch (e) {
-        $.logErr(e, resp)
+        $.logErr(e, resp);
       } finally {
-        resolve();
+        resolve(data);
       }
     })
   })
 }
-function downloadUrl(url = 'https://raw.githubusercontent.com/NobyDa/Script/master/JD-DailyBonus/jd_fakersign.js') {
+function Login(i) {
   return new Promise(resolve => {
-    const options = { url, "timeout": 10000 };
-    if ($.isNode() && process.env.TG_PROXY_HOST && process.env.TG_PROXY_PORT) {
-      const tunnel = require("tunnel");
-      const agent = {
-        https: tunnel.httpsOverHttp({
-          proxy: {
-            host: process.env.TG_PROXY_HOST,
-            port: process.env.TG_PROXY_PORT * 1
-          }
-        })
-      }
-      Object.assign(options, { agent })
-    }
-    $.get(options, async (err, resp, data) => {
+    $.get(taskUrl(turnTableId[i].id), async (err, resp, data) => {
       try {
         if (err) {
-          // console.log(`${JSON.stringify(err)}`)
-          console.log(`检测到您当前网络环境不能访问外网,将使用jsdelivr CDN下载jd_fakersign.js文件`);
-          await $.http.get({url: `https://purge.jsdelivr.net/gh/NobyDa/Script@master/JD-DailyBonus/jd_fakersign.js`, timeout: 10000}).then((resp) => {
-            if (resp.statusCode === 200) {
-              let { body } = resp;
-              body = JSON.parse(body);
-            
+          console.log(`\n${turnTableId[i].name} 登录: API查询请求失败 ‼️‼️`)
+          throw new Error(err);
+        } else {
+          if (data) {
+            // console.log(data)
+            data = JSON.parse(data);
+            if (data.success && data.data) {
+              data = data.data
+              if (!data.hasSign) {
+                let arr = await Faker.getBody(UA,turnTableId[i].url)
+                fp = arr.fp
+                await getEid(arr)
+                await Sign(i)
+              } else {
+                if(data.records && data.records[0]){
+                  for(let i in data.records){
+                    let item = data.records[i]
+                    if((item.hasSign == false && item.index != 1) || i == data.records.length-1){
+                      if(item.hasSign == false) i = i-1
+                      beanNum += Number(data.records[i].beanQuantity)
+                      break;
+                    }
+                  }
+                }
+                signFlag = true;
+                console.log(`${turnTableId[i].name} 已签到`)
+              }
+            } else {
+              if (data.errorMessage) {
+                if(data.errorMessage.indexOf('已签到') > -1 || data.errorMessage.indexOf('今天已经签到') > -1){
+                  signFlag = true;
+                }
+                console.log(`${turnTableId[i].name} ${data.errorMessage}`)
+              } else {
+                console.log(`${turnTableId[i].name} ${JSON.stringify(data)}`)
+              }
+            }
+          } else {
+            console.log(`京豆api返回数据为空，请检查自身原因`)
+          }
+        }
+      } catch (e) {
+        $.logErr(e, resp);
+      } finally {
+        resolve(data);
+      }
+    })
+  })
+}
+
+function getEid(arr) {
+  return new Promise(resolve => {
+    const options = {
+      url: `https://gia.jd.com/fcf.html?a=${arr.a}`,
+      body: `d=${arr.d}`,
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+        "User-Agent": UA
+      }
+    }
+    $.post(options, async (err, resp, data) => {
+      try {
+        if (err) {
+          console.log(`\n${turnTableId[i].name} 登录: API查询请求失败 ‼️‼️`)
+          throw new Error(err);
+        } else {
+          if (data.indexOf("*_*") > 0) {
+            data = data.split("*_*", 2);
+            data = JSON.parse(data[1]);
+            eid = data.eid
+          } else {
+            console.log(`京豆api返回数据为空，请检查自身原因`)
+          }
+        }
+      } catch (e) {
+        $.logErr(e, resp);
+      } finally {
+        resolve(data);
+      }
+    })
+  })
+}
+
+function taskUrl(turnTableId) {
+  const url = `https://jdjoy.jd.com/api/turncard/channel/detail?turnTableId=${turnTableId}&invokeKey=NRp8OPxZMFXmGkaE`
+  return {
+    url,
+    headers: {
+      "Accept": "application/json, text/plain, */*",
+      "Accept-Encoding": "gzip, deflate, br",
+      "Accept-Language": "zh-cn",
+      "Connection": "keep-alive",
+      'Cookie': cookie,
+      "Origin": "https://prodev.m.jd.com",
+      "Referer": "https://prodev.m.jd.com/",
+      "User-Agent": UA,
+    }
+  }
+}
+
+function tasPostkUrl(turnTableId) {
+  const url = `https://jdjoy.jd.com/api/turncard/channel/sign?turnTableId=${turnTableId}&fp=${fp}&eid=${eid}&invokeKey=NRp8OPxZMFXmGkaE`
+  return {
+    url,
+    headers: {
+      "Accept": "application/json, text/plain, */*",
+      "Accept-Encoding": "gzip, deflate, br",
+      "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+      "Connection": "keep-alive",
+      "Content-Type": "application/x-www-form-urlencoded",
+      'Cookie': cookie,
+      "Origin": "https://prodev.m.jd.com",
+      "Referer": "https://prodev.m.jd.com/",
+      "User-Agent": UA,
+    }
+  }
+}
+
+
+
+function Env(t,e){"undefined"!=typeof process&&JSON.stringify(process.env).indexOf("GITHUB")>-1&&process.exit(0);class s{constructor(t){this.env=t}send(t,e="GET"){t="string"==typeof t?{url:t}:t;let s=this.get;return"POST"===e&&(s=this.post),new Promise((e,i)=>{s.call(this,t,(t,s,r)=>{t?i(t):e(s)})})}get(t){return this.send.call(this.env,t)}post(t){return this.send.call(this.env,t,"POST")}}return new class{constructor(t,e){this.name=t,this.http=new s(this),this.data=null,this.dataFile="box.dat",this.logs=[],this.isMute=!1,this.isNeedRewrite=!1,this.logSeparator="\n",this.startTime=(new Date).getTime(),Object.assign(this,e),this.log("",`🔔${this.name}, 开始!`)}isNode(){return"undefined"!=typeof module&&!!module.exports}isQuanX(){return"undefined"!=typeof $task}isSurge(){return"undefined"!=typeof $httpClient&&"undefined"==typeof $loon}isLoon(){return"undefined"!=typeof $loon}toOb
